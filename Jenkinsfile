@@ -1,9 +1,10 @@
-// Jenkinsfile (v9 - 修正 Docker 挂载权限问题)
+// Jenkinsfile (v10 - 修正所有语法上下文的注释)
 pipeline {
     agent {
         docker {
             image 'parsenoire/godot-headless:4.4'
-            // [核心修改 1] 移除 -u 1000:1000。让容器以 root 用户启动，以便我们有权限修改目录所有权。
+            // 以 root 用户启动容器，以便我们有权限修改目录所有权。
+            // 同时将 Jenkins 工作区挂载到容器的 /project 目录。
             args "-v ${env.WORKSPACE}:/project -w /project"
         }
     }
@@ -34,14 +35,20 @@ pipeline {
         stage('Build for Windows') {
             steps {
                 sh '''
-                    # [核心修改 2]
+                    # ======================================================================
+                    # Stage A: 以 root 用户身份准备环境
+                    # ======================================================================
+                    
                     # 我们现在是 root 用户，第一步就是把工作目录的所有权交给用户 1000
-                    # 这样用户 1000 才能在里面创建文件和目录
+                    # 这样后续的用户 1000 才能在里面创建文件和目录
                     echo "Taking ownership of the workspace for user 1000..."
                     chown -R 1000:1000 /project
 
-                    # [核心修改 3]
-                    # 使用 su 命令，切换到用户 1000 来执行所有真正的构建命令
+                    # ======================================================================
+                    # Stage B: 切换到低权限用户 (1000) 执行所有构建命令
+                    # ======================================================================
+
+                    # 使用 su 命令，切换到用户 1000 来执行所有真正的构建命令，这更安全
                     # -s /bin/sh 指定使用 sh shell
                     # 1000 是我们要切换到的用户 ID
                     # -c "..." 里的内容就是要在新 shell 中执行的命令
@@ -76,11 +83,12 @@ pipeline {
         }
 
         stage('Fix Permissions') {
-            # 这个 stage 现在不是必须的了，因为 chown 已经在一开始就处理了权限问题
-            # 但保留它也无害，可以确保最终产物的所有权正确
+            // 这个 stage 现在是可选的，因为前面的 chown 已经处理了主要权限。
+            // 但保留它可以作为最后一步保障，确保 Jenkins 能完全控制所有产出物。
+            // 注意：这里的注释是在 Groovy 上下文中，所以用 //
             steps {
                 sh '''
-                    echo "Final permission check..."
+                    echo "Final permission check to ensure Jenkins ownership..."
                     chown -R $(id -u):$(id -g) .
                 '''
             }
