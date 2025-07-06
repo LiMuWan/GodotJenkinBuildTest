@@ -1,4 +1,4 @@
-// Jenkinsfile (v33 - 安装 xauth 并再次确认目录)
+// Jenkinsfile (v34 - The Final One - 添加了导出输出路径)
 pipeline {
     agent any
 
@@ -7,6 +7,9 @@ pipeline {
         PROJECT_ROOT_IN_CONTAINER = '/project'
         EXPORT_PRESET = 'Windows Desktop'
         BUILD_OUTPUT_DIR = 'Build/Windows'
+        // 定义最终输出的 exe 文件名
+        EXPORT_FILENAME = 'GodotJenkinBuildTest.exe'
+
         BUILD_USER_ID = '1000'
         BUILD_USER_NAME = 'builder'
         BUILD_GROUP_NAME = 'root' 
@@ -19,8 +22,6 @@ pipeline {
         CACHE_DIR = "${PROJECT_ROOT_IN_CONTAINER}/.cache" 
         TEMPLATE_LOCAL_PATH = "${CACHE_DIR}/${TEMPLATE_FILENAME}"
         TEMPLATE_URL = "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE_TAG}/${TEMPLATE_FILENAME}"
-
-        // Godot 的用户数据目录
         GODOT_USER_PATH = "${PROJECT_ROOT_IN_CONTAINER}/.godot"
     }
 
@@ -38,7 +39,6 @@ pipeline {
                     def godotImage = docker.image('parsenoire/godot-headless:4.4')
 
                     godotImage.inside(
-                        // -w /project 确保容器启动后的默认目录是 /project
                         "-u root -v ${env.WORKSPACE}:${PROJECT_ROOT_IN_CONTAINER} -w ${PROJECT_ROOT_IN_CONTAINER}"
                     ) {
                         sh """
@@ -51,18 +51,11 @@ pipeline {
                             
                             echo "--> Installing dependencies (including xauth)..."
                             apt-get update -y && apt-get install -y --no-install-recommends \\
-                                xvfb \\
-                                xauth \\
-                                libxcursor1 \\
-                                libxkbcommon0 \\
-                                libxinerama1 \\
-                                libxi6 \\
-                                libdbus-1-3 \\
-                                ca-certificates \\
-                                wget
+                                xvfb xauth libxcursor1 libxkbcommon0 libxinerama1 \\
+                                libxi6 libdbus-1-3 ca-certificates wget
                             
                             echo "--> Creating build user '${BUILD_USER_NAME}'..."
-                            adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME} || echo "User '${BUILD_USER_NAME}' already exists, skipping creation."
+                            adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME} || echo "User '${BUILD_USER_NAME}' already exists."
                             
                             echo "--> Creating and setting permissions for required directories..."
                             mkdir -p ${CACHE_DIR}
@@ -76,16 +69,12 @@ pipeline {
                             
                             su -s /bin/sh ${BUILD_USER_NAME} -c '
                                 set -e
-                                
-                                # 强制切换到项目目录，确保万无一失
                                 cd ${PROJECT_ROOT_IN_CONTAINER}
                                 
-                                echo "--> Now running as: \$(whoami) (ID: \$(id -u))"
-                                echo "--> Current directory: \$(pwd)"
-                                
+                                echo "--> Now running as: \$(whoami) (ID: \$(id -u)) in \$(pwd)"
                                 export HOME=${PROJECT_ROOT_IN_CONTAINER}
 
-                                echo "--> [CRITICAL] Pre-warming Godot inside Xvfb..."
+                                echo "--> [CRITICAL] Pre-warming Godot..."
                                 xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" godot --editor --quit --path . --user-path ${GODOT_USER_PATH}
                                 echo "--> Pre-warming complete."
                                 
@@ -98,11 +87,21 @@ pipeline {
                                     echo "--> Template found in cache."
                                 fi
                                 
-                                echo "--> Installing export templates inside Xvfb..."
+                                echo "--> Installing export templates..."
                                 xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" godot --verbose --install-export-templates "${TEMPLATE_LOCAL_PATH}" --user-path ${GODOT_USER_PATH} --quit
                                 
-                                echo "--> Starting Godot export inside Xvfb..."
-                                xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" godot --verbose --export-release "${EXPORT_PRESET}" --path . --user-path ${GODOT_USER_PATH} --quit
+                                echo "--> Preparing output directory..."
+                                mkdir -p "${BUILD_OUTPUT_DIR}"
+
+                                echo "--> Starting Godot export..."
+                                # 这是最关键的修改：在命令末尾加上了输出路径
+                                xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" godot \\
+                                    --verbose \\
+                                    --path . \\
+                                    --export-release "${EXPORT_PRESET}" \\
+                                    "${BUILD_OUTPUT_DIR}/${EXPORT_FILENAME}" \\
+                                    --user-path ${GODOT_USER_PATH} \\
+                                    --quit
                                 
                                 echo "--> Build completed successfully!"
                             '
@@ -114,6 +113,7 @@ pipeline {
 
         stage('Archive Artifacts') {
             steps {
+                // 归档整个输出目录
                 archiveArtifacts artifacts: "${BUILD_OUTPUT_DIR}/**", followSymlinks: false
             }
         }
