@@ -1,4 +1,4 @@
-// Jenkinsfile (v45 - 回归官方安装命令)
+// Jenkinsfile (v46 - 分离模板安装与项目构建)
 pipeline {
     agent any
 
@@ -29,23 +29,16 @@ pipeline {
                             set -e
                             
                             echo "Stage 1: Preparing environment as root..."
-                            apt-get update -y && apt-get install -y --no-install-recommends \\
-                                wget ca-certificates
-                            
+                            apt-get update -y && apt-get install -y --no-install-recommends wget ca-certificates
                             adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password ${BUILD_USER_NAME} || echo "User '${BUILD_USER_NAME}' already exists."
                             
-                            echo "--> Creating cache directory..."
+                            echo "--> Creating cache directory and downloading templates..."
                             mkdir -p "${CACHE_DIR}"
-                            
-                            echo "--> Checking for cached Godot export templates..."
                             if [ ! -f "${TEMPLATE_LOCAL_PATH}" ]; then
-                                echo "--> Template not found. Downloading..."
                                 wget -q --show-progress -O "${TEMPLATE_LOCAL_PATH}" "${TEMPLATE_URL}"
-                            else
-                                echo "--> Template found in cache."
                             fi
 
-                            echo "--> Setting correct permissions for all build-related directories..."
+                            echo "--> Setting correct permissions..."
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} "/home/${BUILD_USER_NAME}"
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} '${PROJECT_ROOT_IN_CONTAINER}'
                             
@@ -53,17 +46,20 @@ pipeline {
                             su -s /bin/sh ${BUILD_USER_NAME} -c '
                                 set -e
                                 export HOME="/home/${BUILD_USER_NAME}"
-                                cd "${PROJECT_ROOT_IN_CONTAINER}"
-                                
-                                echo "--> Now running as: \$(whoami) in \$(pwd) with HOME=\${HOME}"
                                 
                                 # =====================================================================
-                                # ===         终 极 解 决 方 案：让 Godot 自 己 安 装 模 板         ===
+                                # ===      终 极 解 决 方 案：在 中 立 目 录 下 安 装 模 板      ===
                                 # =====================================================================
+                                echo "--> Entering HOME directory to perform global setup..."
+                                cd "\${HOME}"
+
                                 echo "--> Installing export templates using Godot official command..."
                                 godot --headless --install-export-templates "${TEMPLATE_LOCAL_PATH}" --quit
                                 # =====================================================================
 
+                                echo "--> Entering project directory to perform build..."
+                                cd "${PROJECT_ROOT_IN_CONTAINER}"
+                                
                                 echo "--- DEBUG: Verifying template installation... ---"
                                 ls -laR "\${HOME}/.local/share/godot/export_templates"
                                 
