@@ -1,4 +1,4 @@
-// Jenkinsfile (v18 - 修正 Groovy 语法错误并优化变量引用)
+// Jenkinsfile (v19 - 为 Godot 命令增加 --verbose 参数并再次修正日志)
 pipeline {
     agent any
 
@@ -75,10 +75,10 @@ pipeline {
                                 else \\
                                     echo '--> Template found in cache. Skipping download.' ; \\
                                 fi && \\
-                                echo '--> Installing export templates...' && \\
-                                godot --headless --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} && \\
+                                echo '--> Installing export templates (this may take a few minutes)...' && \\
+                                godot --verbose --headless --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} && \\
                                 echo '--> Starting Godot export...' && \\
-                                godot --headless --export-release \\"${EXPORT_PRESET}\\" --user-path ${GODOT_USER_PATH} && \\
+                                godot --verbose --headless --export-release \\"${EXPORT_PRESET}\\" --user-path ${GODOT_USER_PATH} && \\
                                 echo '--> Build completed successfully!' \\
                             "
                         """
