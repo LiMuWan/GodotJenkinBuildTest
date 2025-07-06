@@ -1,4 +1,4 @@
-// Jenkinsfile (v39 - 模板安装验证)
+// Jenkinsfile (v40 - 强制指定模板路径)
 pipeline {
     agent any
 
@@ -14,7 +14,6 @@ pipeline {
         TEMPLATE_FILENAME = "Godot_v${GODOT_RELEASE_TAG}_export_templates.tpz"
         CACHE_DIR = "${env.WORKSPACE}/.cache" 
         TEMPLATE_LOCAL_PATH = "${CACHE_DIR}/${TEMPLATE_FILENAME}"
-        TEMPLATE_URL = "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE_TAG}/${TEMPLATE_FILENAME}"
     }
 
     stages {
@@ -29,7 +28,7 @@ pipeline {
                             set -e
                             
                             echo "Stage 1: Preparing environment as root..."
-                            apt-get update -y && apt-get install -y --no-install-recommends \\
+                            apt-get update -y >/dev/null && apt-get install -y --no-install-recommends >/dev/null \\
                                 xvfb xauth libxcursor1 libxkbcommon0 libxinerama1 \\
                                 libxi6 libdbus-1-3 ca-certificates wget libasound2 libpulse0
                             
@@ -54,27 +53,27 @@ pipeline {
                                     echo "--> Template found in cache."
                                 fi
                                 
-                                echo "--> Installing export templates..."
-                                # !!! 修正：移除 --headless，让 xvfb-run 管理图形环境 !!!
-                                xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" godot --install-export-templates "${TEMPLATE_LOCAL_PATH}" --quit
+                                echo "--> Installing export templates... (This step is for verification, might be redundant)"
+                                # 使用 --headless 确保无GUI交互，即使失败也不影响后续
+                                godot --headless --install-export-templates "${TEMPLATE_LOCAL_PATH}" --quit || true
 
-                                # ========================================================
-                                # ===           终 极 调 试：验 证 模 板           ===
-                                # ========================================================
+                                # 修正验证路径
                                 echo "--- DEBUG: Verifying template installation directory... ---"
                                 ls -laR "${HOME}/.local/share/godot/export_templates" || echo "!!! Template directory not found or is empty !!!"
                                 echo "--- DEBUG: End of verification ---"
-                                # ========================================================
                                 
                                 echo "--> Preparing output directory..."
                                 mkdir -p "${BUILD_OUTPUT_DIR}"
                                 
-                                echo "--> Starting Godot export..."
-                                xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" godot \\
+                                echo "--> Starting Godot export with explicit template path..."
+                                # !!! 终极解决方案：使用 --headless 并强制指定模板路径 !!!
+                                godot \\
+                                    --headless \\
                                     --verbose \\
                                     --path . \\
                                     --export-release "${EXPORT_PRESET}" \\
                                     "${BUILD_OUTPUT_DIR}/${EXPORT_FILENAME}" \\
+                                    --export-templates "${TEMPLATE_LOCAL_PATH}" \\
                                     --quit
                                 
                                 echo "--> Build completed successfully!"
@@ -87,8 +86,24 @@ pipeline {
 
         stage('Archive Artifacts') {
             steps {
-                archiveArtifacts artifacts: "Build/Windows/**", followSymlinks: false
+                // 清理旧的构建产物，只归档最新的
+                cleanWs deleteDirs: true, patterns: [[pattern: 'Build/**', type: 'INCLUDE']]
+                archiveArtifacts artifacts: "Build/Windows/**", followSymlinks: false, onlyIfSuccessful: true
             }
+        }
+    }
+    
+    post {
+        success {
+            echo 'Pipeline successfully completed!'
+            // 可以在这里添加发送通知等操作
+        }
+        failure {
+            echo 'Pipeline failed. Please check the logs.'
+        }
+        always {
+            echo 'Cleaning up workspace...'
+            cleanWs()
         }
     }
 }
