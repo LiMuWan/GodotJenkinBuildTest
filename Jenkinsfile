@@ -1,6 +1,6 @@
-// Jenkinsfile (v35 - 添加文件系统检查)
+// Jenkinsfile (v36 - 回归初心)
 pipeline {
-    agent any
+    agent any // 让 Jenkins 在顶层处理 checkout
 
     environment {
         // --- 构建配置 ---
@@ -25,12 +25,8 @@ pipeline {
     }
 
     stages {
-        stage('Checkout Code') {
-            steps {
-                cleanWs()
-                checkout scm
-            }
-        }
+        // !!! 删除 'Checkout Code' 阶段 !!!
+        // Jenkins 会在所有 stage 之前，自动在顶层 agent 上执行一次 checkout
 
         stage('Build in Docker Container') {
             steps {
@@ -38,6 +34,7 @@ pipeline {
                     def godotImage = docker.image('parsenoire/godot-headless:4.4')
 
                     godotImage.inside(
+                        // -u root 启动，-v 挂载 Jenkins 已检出的工作区
                         "-u root -v ${env.WORKSPACE}:${PROJECT_ROOT_IN_CONTAINER} -w ${PROJECT_ROOT_IN_CONTAINER}"
                     ) {
                         sh """
@@ -45,16 +42,12 @@ pipeline {
                             
                             # 阶段一：以 root 用户准备环境
                             echo "Stage 1: Preparing environment as root..."
-                            echo "--> Installing dependencies (including audio libs)..."
                             apt-get update -y && apt-get install -y --no-install-recommends \\
                                 xvfb xauth libxcursor1 libxkbcommon0 libxinerama1 \\
-                                libxi6 libdbus-1-3 ca-certificates wget \\
-                                libasound2 libpulse0
+                                libxi6 libdbus-1-3 ca-certificates wget libasound2 libpulse0
                             
-                            echo "--> Creating build user '${BUILD_USER_NAME}'..."
                             adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME} || echo "User '${BUILD_USER_NAME}' already exists."
                             
-                            echo "--> Creating and setting permissions for required directories..."
                             mkdir -p ${CACHE_DIR} ${GODOT_USER_PATH}
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} ${PROJECT_ROOT_IN_CONTAINER}
                             
@@ -64,27 +57,15 @@ pipeline {
                                 set -e
                                 cd ${PROJECT_ROOT_IN_CONTAINER}
                                 
-                                echo "--> Now running as: \$(whoami) (ID: \$(id -u)) in \$(pwd)"
                                 export HOME=${PROJECT_ROOT_IN_CONTAINER}
 
-                                # ... 省略之前的成功步骤 ...
-                                
-                                echo "--> Preparing output directory..."
-                                mkdir -p "${BUILD_OUTPUT_DIR}"
-
-                                # ========================================================
-                                # ===           决 定 性 的 调 试 步 骤           ===
-                                # ========================================================
+                                # 再次进行决定性的调试检查
                                 echo "--- DEBUG: Listing project root contents (ls -la) ---"
                                 ls -la
-                                
-                                echo "--- DEBUG: Displaying export_presets.cfg (cat) ---"
-                                # 如果文件不存在，这个命令会报错，这本身也是一个有用的信息
-                                cat export_presets.cfg || echo "export_presets.cfg not found."
-                                
-                                echo "--- DEBUG: End of debug section ---"
-                                # ========================================================
 
+                                echo "--> Preparing output directory..."
+                                mkdir -p "${BUILD_OUTPUT_DIR}"
+                                
                                 echo "--> Starting Godot export..."
                                 xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" godot \\
                                     --verbose \\
