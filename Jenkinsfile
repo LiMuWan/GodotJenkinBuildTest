@@ -1,4 +1,4 @@
-// Jenkinsfile (v14 - 使用 Alpine Linux 兼容的 adduser 命令)
+// Jenkinsfile (v15 - 修正 chown 命令，使用正确的用户组)
 pipeline {
     agent any
 
@@ -7,7 +7,8 @@ pipeline {
         EXPORT_PRESET = 'Windows Desktop'
         BUILD_OUTPUT_DIR = 'Build/Windows'
         BUILD_USER_ID = '1000'
-        BUILD_USER_NAME = 'builder' // 定义用户名，方便复用
+        BUILD_USER_NAME = 'builder'
+        BUILD_GROUP_NAME = 'root' // 明确指定 builder 用户所属的组
 
         // --- 模板配置 ---
         GODOT_RELEASE_TAG = '4.4.1-stable'
@@ -37,18 +38,17 @@ pipeline {
                     godotImage.inside(
                         "-u root -v ${env.WORKSPACE}:/project -w /project"
                     ) {
-                        sh '''
+                        sh """
                             set -e
                             
                             echo "========================================================"
                             echo "Step 1: Preparing environment as root..."
                             
-                            # [核心修改] 使用 Alpine Linux 兼容的 adduser 命令创建构建用户
                             echo "Creating build user '${BUILD_USER_NAME}' with ID ${BUILD_USER_ID}..."
                             adduser \\
                                 --uid ${BUILD_USER_ID} \\
                                 --shell /bin/sh \\
-                                --ingroup root \\
+                                --ingroup ${BUILD_GROUP_NAME} \\
                                 --disabled-password \\
                                 --no-create-home \\
                                 ${BUILD_USER_NAME}
@@ -57,15 +57,17 @@ pipeline {
                             mkdir -p /project/.cache
                             mkdir -p /project/.jenkins-home
                             
+                            # [核心修改] 将 chown 的组从 'builder' 改为 'root'
+                            # 因为 adduser 命令将 builder 用户的主组设置为了 root
                             echo "Setting ownership for the new user..."
-                            chown -R ${BUILD_USER_NAME}:${BUILD_USER_NAME} /project
+                            chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} /project
                             
                             echo "========================================================"
                             echo "Step 2: Switching to user '${BUILD_USER_NAME}' for secure build..."
                             
                             su -s /bin/sh ${BUILD_USER_NAME} -c " \\
                                 set -e ; \\
-                                echo '--> Now running as: $(whoami) (ID: $(id -u))' ; \\
+                                echo '--> Now running as: \$(whoami) (ID: \$(id -u))' ; \\
                                 echo '--> Checking for cached Godot export templates...' ; \\
                                 if [ ! -f '/project/.cache/${TEMPLATE_FILENAME}' ]; then \\
                                     echo '--> Template not found. Downloading...' ; \\
@@ -80,7 +82,7 @@ pipeline {
                                 godot --headless --export-release \\"${EXPORT_PRESET}\\" --user-path /project/.jenkins-home ; \\
                                 echo '--> Build completed successfully!' ; \\
                             "
-                        '''
+                        """
                     } 
                 }
             }
