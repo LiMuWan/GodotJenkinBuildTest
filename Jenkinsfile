@@ -1,4 +1,4 @@
-// Jenkinsfile (v27 - 补全最后的 dbus 依赖)
+// Jenkinsfile (v29 - 为 install 和 export 命令都增加 --quit)
 pipeline {
     agent any
 
@@ -84,10 +84,10 @@ pipeline {
                                 fi && \\
                                 
                                 echo '--> Installing export templates inside Xvfb...' && \\
-                                xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' godot --verbose --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} && \\
+                                xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' godot --verbose --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} --quit && \\
                                 
                                 echo '--> Starting Godot export inside Xvfb...' && \\
-                                xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' godot --verbose --export-release \\"${EXPORT_PRESET}\\" --user-path ${GODOT_USER_PATH} && \\
+                                xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' godot --verbose --export-release \\"${EXPORT_PRESET}\\" --user-path ${GODOT_USER_PATH} --quit && \\
                                 
                                 echo '--> Build completed successfully!' \\
                             "
