@@ -1,4 +1,4 @@
-// Jenkinsfile (v25 - 补全更多 X11 依赖)
+// Jenkinsfile (v26 - 移除 --no-install-recommends 以安装 xauth)
 pipeline {
     agent any
 
@@ -46,8 +46,8 @@ pipeline {
                             echo "========================================================"
                             echo "Step 1: Preparing environment as root..."
                             
-                            echo "--> Installing Xvfb and all known required X11 libraries..."
-                            apt-get update -y && apt-get install -y --no-install-recommends \\
+                            echo "--> Installing Xvfb and all required X11 libraries (with recommends)..."
+                            apt-get update -y && apt-get install -y \\
                                 xvfb \\
                                 libxcursor1 \\
                                 libxkbcommon0 \\
