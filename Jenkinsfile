@@ -1,4 +1,4 @@
-// Jenkinsfile (v23 - 引入 Xvfb 虚拟显示器)
+// Jenkinsfile (v24 - 补全 Xvfb 运行所需的 X11 依赖)
 pipeline {
     agent any
 
@@ -46,8 +46,8 @@ pipeline {
                             echo "========================================================"
                             echo "Step 1: Preparing environment as root..."
                             
-                            echo "--> Installing Xvfb for virtual display server..."
-                            apt-get update -y && apt-get install -y xvfb
+                            echo "--> Installing Xvfb and required X11 libraries (libxcursor1)..."
+                            apt-get update -y && apt-get install -y xvfb libxcursor1
                             
                             echo "--> Creating build user..."
                             adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME}
