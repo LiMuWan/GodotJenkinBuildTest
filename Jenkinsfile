@@ -1,4 +1,4 @@
-// Jenkinsfile (v13 - 在容器内动态创建构建用户)
+// Jenkinsfile (v14 - 使用 Alpine Linux 兼容的 adduser 命令)
 pipeline {
     agent any
 
@@ -6,7 +6,8 @@ pipeline {
         // --- 构建配置 ---
         EXPORT_PRESET = 'Windows Desktop'
         BUILD_OUTPUT_DIR = 'Build/Windows'
-        BUILD_USER_ID = '1000' // 定义构建用户的ID，方便复用
+        BUILD_USER_ID = '1000'
+        BUILD_USER_NAME = 'builder' // 定义用户名，方便复用
 
         // --- 模板配置 ---
         GODOT_RELEASE_TAG = '4.4.1-stable'
@@ -36,35 +37,33 @@ pipeline {
                     godotImage.inside(
                         "-u root -v ${env.WORKSPACE}:/project -w /project"
                     ) {
-                        // --- 我们现在在容器内部，并且是 root 用户 ---
-                        
                         sh '''
                             set -e
                             
                             echo "========================================================"
                             echo "Step 1: Preparing environment as root..."
                             
-                            # [核心修改] 创建一个用于构建的用户和组
-                            # -u ${BUILD_USER_ID}: 指定用户ID
-                            # -m: 创建用户的主目录 (虽然我们不用，但这是好习惯)
-                            # -s /bin/sh: 指定shell
-                            # -N: 不创建同名的私有组，而是使用默认的 users 组
-                            echo "Creating build user with ID ${BUILD_USER_ID}..."
-                            adduser -u ${BUILD_USER_ID} -m -s /bin/sh -D -G root builder
+                            # [核心修改] 使用 Alpine Linux 兼容的 adduser 命令创建构建用户
+                            echo "Creating build user '${BUILD_USER_NAME}' with ID ${BUILD_USER_ID}..."
+                            adduser \\
+                                --uid ${BUILD_USER_ID} \\
+                                --shell /bin/sh \\
+                                --ingroup root \\
+                                --disabled-password \\
+                                --no-create-home \\
+                                ${BUILD_USER_NAME}
                             
                             echo "Creating required directories..."
                             mkdir -p /project/.cache
                             mkdir -p /project/.jenkins-home
                             
-                            # 将整个工作区的所有权交给新创建的用户
                             echo "Setting ownership for the new user..."
-                            chown -R ${BUILD_USER_ID}:${BUILD_USER_ID} /project
+                            chown -R ${BUILD_USER_NAME}:${BUILD_USER_NAME} /project
                             
                             echo "========================================================"
-                            echo "Step 2: Switching to user 'builder' (${BUILD_USER_ID}) for secure build..."
+                            echo "Step 2: Switching to user '${BUILD_USER_NAME}' for secure build..."
                             
-                            # 使用 su 切换到新创建的用户来执行所有 Godot 命令
-                            su -s /bin/sh builder -c " \\
+                            su -s /bin/sh ${BUILD_USER_NAME} -c " \\
                                 set -e ; \\
                                 echo '--> Now running as: $(whoami) (ID: $(id -u))' ; \\
                                 echo '--> Checking for cached Godot export templates...' ; \\
