@@ -1,4 +1,4 @@
-// Jenkinsfile (v21 - 增加 Godot 环境预热步骤)
+// Jenkinsfile (v22 - 使用 --editor --quit 进行重量级预热)
 pipeline {
     agent any
 
@@ -60,9 +60,9 @@ pipeline {
                                 export HOME=${PROJECT_ROOT_IN_CONTAINER} && \\
                                 echo '--> Now running as: \$(whoami) (ID: \$(id -u)) in PWD=\$(pwd)' && \\
                                 
-                                echo '--> [CRITICAL] Pre-warming Godot to generate editor settings...' && \\
-                                godot --version --display-driver headless --headless --user-path ${GODOT_USER_PATH} && \\
-                                echo '--> Pre-warming complete. Settings files should now exist.' && \\
+                                echo '--> [CRITICAL] Pre-warming Godot with --editor --quit to generate all settings...' && \\
+                                godot --editor --quit --display-driver headless --headless --user-path ${GODOT_USER_PATH} && \\
+                                echo '--> Pre-warming complete. All settings files should now exist.' && \\
                                 
                                 echo '--> Checking for cached Godot export templates...' && \\
                                 if [ ! -f ${TEMPLATE_LOCAL_PATH} ]; then \\
@@ -73,7 +73,7 @@ pipeline {
                                     echo '--> Template found in cache. Skipping download.' ; \\
                                 fi && \\
                                 
-                                echo '--> Installing export templates (this should now skip theme generation)...' && \\
+                                echo '--> Installing export templates (this MUST now skip theme generation)...' && \\
                                 godot --display-driver headless --verbose --headless --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} && \\
                                 
                                 echo '--> Starting Godot export...' && \\
