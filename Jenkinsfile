@@ -1,4 +1,4 @@
-// Jenkinsfile (v26 - 移除 --no-install-recommends 以安装 xauth)
+// Jenkinsfile (v27 - 补全最后的 dbus 依赖)
 pipeline {
     agent any
 
@@ -46,13 +46,14 @@ pipeline {
                             echo "========================================================"
                             echo "Step 1: Preparing environment as root..."
                             
-                            echo "--> Installing Xvfb and all required X11 libraries (with recommends)..."
+                            echo "--> Installing Xvfb and all required libraries..."
                             apt-get update -y && apt-get install -y \\
                                 xvfb \\
                                 libxcursor1 \\
                                 libxkbcommon0 \\
                                 libxinerama1 \\
-                                libxi6
+                                libxi6 \\
+                                libdbus-1-3
                             
                             echo "--> Creating build user..."
                             adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME}
