@@ -1,4 +1,4 @@
-// Jenkinsfile (v43 - 修正缓存目录创建)
+// Jenkinsfile (v44 - 使用 unzip -j)
 pipeline {
     agent any
 
@@ -35,11 +35,7 @@ pipeline {
                             
                             adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password ${BUILD_USER_NAME} || echo "User '${BUILD_USER_NAME}' already exists."
                             
-                            # ========================================================
-                            # ===         终 极 解 决 方 案：手 动 安 装 模 板         ===
-                            # ========================================================
                             echo "--> Manually creating directories..."
-                            # !!! 修正：恢复创建缓存目录 !!!
                             mkdir -p "${CACHE_DIR}"
                             mkdir -p "${GODOT_TEMPLATE_DIR}"
                             
@@ -51,16 +47,18 @@ pipeline {
                                 echo "--> Template found in cache."
                             fi
                             
-                            echo "--> Unzipping templates directly to the target directory..."
-                            unzip -o "${TEMPLATE_LOCAL_PATH}" -d "${GODOT_TEMPLATE_DIR}"
-                            mv "${GODOT_TEMPLATE_DIR}/templates/"* "${GODOT_TEMPLATE_DIR}/"
-                            rmdir "${GODOT_TEMPLATE_DIR}/templates"
+                            # ========================================================
+                            # ===         终 极 解 决 方 案：unzip -j         ===
+                            # ========================================================
+                            echo "--> Unzipping templates directly into the target directory, ignoring paths..."
+                            # 使用 -j 参数，直接将所有模板文件解压到目标目录，无需再进行 mv 和 rmdir
+                            unzip -j -o "${TEMPLATE_LOCAL_PATH}" -d "${GODOT_TEMPLATE_DIR}"
+                            # ========================================================
 
                             echo "--> Setting correct permissions for all build-related directories..."
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} "/home/${BUILD_USER_NAME}"
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} '${PROJECT_ROOT_IN_CONTAINER}'
-                            # ========================================================
-
+                            
                             echo "Stage 2: Switching to user '${BUILD_USER_NAME}' to run build..."
                             su -s /bin/sh ${BUILD_USER_NAME} -c '
                                 set -e
