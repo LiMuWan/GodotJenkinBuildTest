@@ -1,4 +1,4 @@
-// Jenkinsfile (v47 - Removing harmful --quit flag from install command)
+// Jenkinsfile (v48 - 通过关闭stdin来优雅地退出进程)
 pipeline {
     agent any
 
@@ -51,10 +51,10 @@ pipeline {
                                 cd "\${HOME}"
 
                                 # =====================================================================
-                                # ===      终 极 解 决 方 案：移 除 --quit，让 命 令 完 整 执 行      ===
+                                # ===    终极解决方案：关闭标准输入，让进程在完成后自动退出    ===
                                 # =====================================================================
                                 echo "--> Installing export templates using Godot official command..."
-                                godot --headless --install-export-templates "${TEMPLATE_LOCAL_PATH}"
+                                godot --headless --install-export-templates "${TEMPLATE_LOCAL_PATH}" < /dev/null
                                 # =====================================================================
 
                                 echo "--> Entering project directory to perform build..."
