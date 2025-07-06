@@ -1,4 +1,4 @@
-// Jenkinsfile (v52 - 授予对整个HOME目录的完全所有权)
+// Jenkinsfile (v53 - 延长模板安装的超时时间)
 pipeline {
     agent any
 
@@ -41,28 +41,19 @@ pipeline {
                             adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password ${BUILD_USER_NAME} || echo "User '${BUILD_USER_NAME}' already exists."
                             
                             echo "--> Ensuring cache directories exist and have correct permissions..."
-                            mkdir -p "${HOST_CACHE_DIR_DOWNLOADS}"
-                            # 注意：我们不再需要在这里创建/home/builder/.local...，因为下一步chown会处理整个home
-                            
-                            # =====================================================================
-                            # ===          最终的、根本的、决定性的权限修复          ===
-                            # === 将整个 /home/builder 目录的所有权完全移交给 builder  ===
-                            # =====================================================================
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} "/home/${BUILD_USER_NAME}"
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} "${HOST_CACHE_DIR_DOWNLOADS}"
-                            # =====================================================================
                             
                             echo "Stage 2: Switching to user '${BUILD_USER_NAME}' to run build..."
                             su -s /bin/sh ${BUILD_USER_NAME} -c '
                                 set -ex
                                 export HOME="/home/${BUILD_USER_NAME}"
                                 
-                                # ... (后续所有脚本逻辑保持不变) ...
                                 if [ ! -d "${TEMPLATE_TARGET_DIR_IN_CONTAINER}" ]; then
                                     echo "--> Export templates not found in cache. Starting installation..."
                                     
-                                    echo "--> Downloading templates if not present in cache..."
                                     if [ ! -f "${TEMPLATE_LOCAL_PATH}" ]; then
+                                        echo "--> Downloading templates..."
                                         wget -q --show-progress -O "${TEMPLATE_LOCAL_PATH}" "${TEMPLATE_URL}"
                                     else
                                         echo "--> Template .tpz file found in cache. Skipping download."
@@ -75,7 +66,13 @@ pipeline {
                                     GODOT_PID=\$!
 
                                     echo "--> Monitoring installation progress (PID: \${GODOT_PID})..."
-                                    TIMEOUT=600
+                                    
+                                    # =====================================================================
+                                    # ===               唯 一 的 修 改：延 长 超 时              ===
+                                    # =====================================================================
+                                    TIMEOUT=1800  # 从 600 秒 (10分钟) 延长到 1800 秒 (30分钟)
+                                    # =====================================================================
+
                                     COUNT=0
                                     while kill -0 \${GODOT_PID} 2>/dev/null; do
                                         if [ \$COUNT -ge \$TIMEOUT ]; then
@@ -97,24 +94,21 @@ pipeline {
                                     echo "--> SUCCESS: Found cached export templates. Skipping installation."
                                 fi
 
+                                # ... (后续导出逻辑保持不变) ...
                                 echo "--> Entering project directory to perform build..."
                                 cd "${PROJECT_ROOT_IN_CONTAINER}"
-                                
                                 echo "--- DEBUG: Verifying template installation... ---"
                                 ls -laR "\${HOME}/.local/share/godot/export_templates"
-                                
                                 echo "--> Preparing output directory..."
                                 mkdir -p "${BUILD_OUTPUT_DIR}"
-                                
                                 echo "--> Starting Godot export..."
-                                godot \
-                                    --headless \
-                                    --verbose \
-                                    --path . \
-                                    --export-release "${EXPORT_PRESET}" \
-                                    "${BUILD_OUTPUT_DIR}/${EXPORT_FILENAME}" \
+                                godot \\
+                                    --headless \\
+                                    --verbose \\
+                                    --path . \\
+                                    --export-release "${EXPORT_PRESET}" \\
+                                    "${BUILD_OUTPUT_DIR}/${EXPORT_FILENAME}" \\
                                     --quit
-                                
                                 echo "--> Build completed successfully!"
                             '
                         """
@@ -122,7 +116,6 @@ pipeline {
                 }
             }
         }
-        // ... (后续 stages 保持不变) ...
         stage('Archive Artifacts') {
             steps {
                 archiveArtifacts artifacts: "Build/Windows/**", followSymlinks: false, onlyIfSuccessful: true
