@@ -1,4 +1,4 @@
-// Jenkinsfile (v20 - 强制使用无头显示驱动)
+// Jenkinsfile (v21 - 增加 Godot 环境预热步骤)
 pipeline {
     agent any
 
@@ -46,17 +46,9 @@ pipeline {
                             echo "========================================================"
                             echo "Step 1: Preparing environment as root..."
                             
-                            adduser \\
-                                --uid ${BUILD_USER_ID} \\
-                                --shell /bin/sh \\
-                                --ingroup ${BUILD_GROUP_NAME} \\
-                                --disabled-password \\
-                                --no-create-home \\
-                                ${BUILD_USER_NAME}
-                            
+                            adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME}
                             mkdir -p ${CACHE_DIR}
                             mkdir -p ${GODOT_USER_PATH}
-                            
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} ${PROJECT_ROOT_IN_CONTAINER}
                             
                             echo "========================================================"
@@ -67,6 +59,11 @@ pipeline {
                                 cd ${PROJECT_ROOT_IN_CONTAINER} && \\
                                 export HOME=${PROJECT_ROOT_IN_CONTAINER} && \\
                                 echo '--> Now running as: \$(whoami) (ID: \$(id -u)) in PWD=\$(pwd)' && \\
+                                
+                                echo '--> [CRITICAL] Pre-warming Godot to generate editor settings...' && \\
+                                godot --version --display-driver headless --headless --user-path ${GODOT_USER_PATH} && \\
+                                echo '--> Pre-warming complete. Settings files should now exist.' && \\
+                                
                                 echo '--> Checking for cached Godot export templates...' && \\
                                 if [ ! -f ${TEMPLATE_LOCAL_PATH} ]; then \\
                                     echo '--> Template not found. Downloading...' ; \\
@@ -75,10 +72,13 @@ pipeline {
                                 else \\
                                     echo '--> Template found in cache. Skipping download.' ; \\
                                 fi && \\
-                                echo '--> Installing export templates (this may take a few minutes)...' && \\
+                                
+                                echo '--> Installing export templates (this should now skip theme generation)...' && \\
                                 godot --display-driver headless --verbose --headless --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} && \\
+                                
                                 echo '--> Starting Godot export...' && \\
                                 godot --display-driver headless --verbose --headless --export-release \\"${EXPORT_PRESET}\\" --user-path ${GODOT_USER_PATH} && \\
+                                
                                 echo '--> Build completed successfully!' \\
                             "
                         """
