@@ -1,4 +1,4 @@
-// Jenkinsfile (v19 - 为 Godot 命令增加 --verbose 参数并再次修正日志)
+// Jenkinsfile (v20 - 强制使用无头显示驱动)
 pipeline {
     agent any
 
@@ -70,15 +70,15 @@ pipeline {
                                 echo '--> Checking for cached Godot export templates...' && \\
                                 if [ ! -f ${TEMPLATE_LOCAL_PATH} ]; then \\
                                     echo '--> Template not found. Downloading...' ; \\
-                                    wget -O ${TEMPLATE_LOCAL_PATH} '${TEMPLATE_URL}' ; \\
+                                    wget -q --show-progress -O ${TEMPLATE_LOCAL_PATH} '${TEMPLATE_URL}' ; \\
                                     echo '--> Download complete.' ; \\
                                 else \\
                                     echo '--> Template found in cache. Skipping download.' ; \\
                                 fi && \\
                                 echo '--> Installing export templates (this may take a few minutes)...' && \\
-                                godot --verbose --headless --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} && \\
+                                godot --display-driver headless --verbose --headless --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} && \\
                                 echo '--> Starting Godot export...' && \\
-                                godot --verbose --headless --export-release \\"${EXPORT_PRESET}\\" --user-path ${GODOT_USER_PATH} && \\
+                                godot --display-driver headless --verbose --headless --export-release \\"${EXPORT_PRESET}\\" --user-path ${GODOT_USER_PATH} && \\
                                 echo '--> Build completed successfully!' \\
                             "
                         """
