@@ -1,4 +1,4 @@
-// Jenkinsfile (v40 - 强制指定模板路径)
+// Jenkinsfile (v41 - 修正变量丢失错误)
 pipeline {
     agent any
 
@@ -14,6 +14,9 @@ pipeline {
         TEMPLATE_FILENAME = "Godot_v${GODOT_RELEASE_TAG}_export_templates.tpz"
         CACHE_DIR = "${env.WORKSPACE}/.cache" 
         TEMPLATE_LOCAL_PATH = "${CACHE_DIR}/${TEMPLATE_FILENAME}"
+        
+        // !!! 修正：将丢失的 TEMPLATE_URL 变量加回来 !!!
+        TEMPLATE_URL = "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE_TAG}/${TEMPLATE_FILENAME}"
     }
 
     stages {
@@ -53,20 +56,10 @@ pipeline {
                                     echo "--> Template found in cache."
                                 fi
                                 
-                                echo "--> Installing export templates... (This step is for verification, might be redundant)"
-                                # 使用 --headless 确保无GUI交互，即使失败也不影响后续
-                                godot --headless --install-export-templates "${TEMPLATE_LOCAL_PATH}" --quit || true
-
-                                # 修正验证路径
-                                echo "--- DEBUG: Verifying template installation directory... ---"
-                                ls -laR "${HOME}/.local/share/godot/export_templates" || echo "!!! Template directory not found or is empty !!!"
-                                echo "--- DEBUG: End of verification ---"
-                                
                                 echo "--> Preparing output directory..."
                                 mkdir -p "${BUILD_OUTPUT_DIR}"
                                 
                                 echo "--> Starting Godot export with explicit template path..."
-                                # !!! 终极解决方案：使用 --headless 并强制指定模板路径 !!!
                                 godot \\
                                     --headless \\
                                     --verbose \\
@@ -86,21 +79,12 @@ pipeline {
 
         stage('Archive Artifacts') {
             steps {
-                // 清理旧的构建产物，只归档最新的
-                cleanWs deleteDirs: true, patterns: [[pattern: 'Build/**', type: 'INCLUDE']]
                 archiveArtifacts artifacts: "Build/Windows/**", followSymlinks: false, onlyIfSuccessful: true
             }
         }
     }
     
     post {
-        success {
-            echo 'Pipeline successfully completed!'
-            // 可以在这里添加发送通知等操作
-        }
-        failure {
-            echo 'Pipeline failed. Please check the logs.'
-        }
         always {
             echo 'Cleaning up workspace...'
             cleanWs()
