@@ -1,4 +1,4 @@
-// Jenkinsfile (v46 - 分离模板安装与项目构建)
+// Jenkinsfile (v47 - Removing harmful --quit flag from install command)
 pipeline {
     agent any
 
@@ -47,14 +47,14 @@ pipeline {
                                 set -e
                                 export HOME="/home/${BUILD_USER_NAME}"
                                 
-                                # =====================================================================
-                                # ===      终 极 解 决 方 案：在 中 立 目 录 下 安 装 模 板      ===
-                                # =====================================================================
                                 echo "--> Entering HOME directory to perform global setup..."
                                 cd "\${HOME}"
 
+                                # =====================================================================
+                                # ===      终 极 解 决 方 案：移 除 --quit，让 命 令 完 整 执 行      ===
+                                # =====================================================================
                                 echo "--> Installing export templates using Godot official command..."
-                                godot --headless --install-export-templates "${TEMPLATE_LOCAL_PATH}" --quit
+                                godot --headless --install-export-templates "${TEMPLATE_LOCAL_PATH}"
                                 # =====================================================================
 
                                 echo "--> Entering project directory to perform build..."
