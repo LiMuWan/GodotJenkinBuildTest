@@ -1,4 +1,4 @@
-// Jenkinsfile (v15 - 修正 chown 命令，使用正确的用户组)
+// Jenkinsfile (v16 - 重定向 HOME 环境变量以解决 Godot 写入问题)
 pipeline {
     agent any
 
@@ -8,7 +8,7 @@ pipeline {
         BUILD_OUTPUT_DIR = 'Build/Windows'
         BUILD_USER_ID = '1000'
         BUILD_USER_NAME = 'builder'
-        BUILD_GROUP_NAME = 'root' // 明确指定 builder 用户所属的组
+        BUILD_GROUP_NAME = 'root' 
 
         // --- 模板配置 ---
         GODOT_RELEASE_TAG = '4.4.1-stable'
@@ -57,17 +57,19 @@ pipeline {
                             mkdir -p /project/.cache
                             mkdir -p /project/.jenkins-home
                             
-                            # [核心修改] 将 chown 的组从 'builder' 改为 'root'
-                            # 因为 adduser 命令将 builder 用户的主组设置为了 root
                             echo "Setting ownership for the new user..."
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} /project
                             
                             echo "========================================================"
                             echo "Step 2: Switching to user '${BUILD_USER_NAME}' for secure build..."
                             
+                            # [核心修改] 在执行命令前，导出 HOME=/project 环境变量。
+                            # 这会告诉 Godot 和其他工具，将用户特定的文件写入 /project 目录，
+                            # 而不是不存在的 /home/builder 目录，从而避免崩溃。
                             su -s /bin/sh ${BUILD_USER_NAME} -c " \\
+                                export HOME=/project && \\
                                 set -e ; \\
-                                echo '--> Now running as: \$(whoami) (ID: \$(id -u))' ; \\
+                                echo '--> Now running as: \$(whoami) (ID: \$(id -u)) in HOME=\$(pwd)' ; \\
                                 echo '--> Checking for cached Godot export templates...' ; \\
                                 if [ ! -f '/project/.cache/${TEMPLATE_FILENAME}' ]; then \\
                                     echo '--> Template not found. Downloading...' ; \\
