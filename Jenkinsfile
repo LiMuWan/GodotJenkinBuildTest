@@ -1,4 +1,4 @@
-// Jenkinsfile (v24 - 补全 Xvfb 运行所需的 X11 依赖)
+// Jenkinsfile (v25 - 补全更多 X11 依赖)
 pipeline {
     agent any
 
@@ -46,8 +46,13 @@ pipeline {
                             echo "========================================================"
                             echo "Step 1: Preparing environment as root..."
                             
-                            echo "--> Installing Xvfb and required X11 libraries (libxcursor1)..."
-                            apt-get update -y && apt-get install -y xvfb libxcursor1
+                            echo "--> Installing Xvfb and all known required X11 libraries..."
+                            apt-get update -y && apt-get install -y --no-install-recommends \\
+                                xvfb \\
+                                libxcursor1 \\
+                                libxkbcommon0 \\
+                                libxinerama1 \\
+                                libxi6
                             
                             echo "--> Creating build user..."
                             adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME}
@@ -77,7 +82,7 @@ pipeline {
                                     echo '--> Template found in cache. Skipping download.' ; \\
                                 fi && \\
                                 
-                                echo '--> Installing export templates inside Xvfb (this will generate theme and exit)...' && \\
+                                echo '--> Installing export templates inside Xvfb...' && \\
                                 xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' godot --verbose --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} && \\
                                 
                                 echo '--> Starting Godot export inside Xvfb...' && \\
