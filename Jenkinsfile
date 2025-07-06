@@ -1,10 +1,14 @@
-// Jenkinsfile (v10 - 修正所有语法上下文的注释)
+// Jenkinsfile (v11 - 使用 'user' 参数强制以 root 身份启动容器)
 pipeline {
     agent {
         docker {
             image 'parsenoire/godot-headless:4.4'
-            // 以 root 用户启动容器，以便我们有权限修改目录所有权。
-            // 同时将 Jenkins 工作区挂载到容器的 /project 目录。
+            
+            // [核心修改] 使用专用的 'user' 参数来覆盖 Jenkins 的全局用户设置。
+            // 这将确保容器以 root 用户身份启动，以便我们拥有执行 chown 的权限。
+            user 'root'
+            
+            // args 参数仍然需要，用于挂载卷和设置工作目录。
             args "-v ${env.WORKSPACE}:/project -w /project"
         }
     }
@@ -35,23 +39,18 @@ pipeline {
         stage('Build for Windows') {
             steps {
                 sh '''
-                    # ======================================================================
                     # Stage A: 以 root 用户身份准备环境
-                    # ======================================================================
+                    # ----------------------------------------------------------------------
+                    # 因为 agent 中设置了 user 'root'，所以下面的命令将由 root 执行
                     
-                    # 我们现在是 root 用户，第一步就是把工作目录的所有权交给用户 1000
-                    # 这样后续的用户 1000 才能在里面创建文件和目录
                     echo "Taking ownership of the workspace for user 1000..."
                     chown -R 1000:1000 /project
+                    echo "Ownership changed successfully."
 
-                    # ======================================================================
                     # Stage B: 切换到低权限用户 (1000) 执行所有构建命令
-                    # ======================================================================
-
-                    # 使用 su 命令，切换到用户 1000 来执行所有真正的构建命令，这更安全
-                    # -s /bin/sh 指定使用 sh shell
-                    # 1000 是我们要切换到的用户 ID
-                    # -c "..." 里的内容就是要在新 shell 中执行的命令
+                    # ----------------------------------------------------------------------
+                    # 这是一个好习惯，避免在 root 用户下执行整个构建过程
+                    
                     echo "Switching to user 1000 to run the build..."
                     su -s /bin/sh 1000 -c " \\
                         set -e ; \\
@@ -82,19 +81,18 @@ pipeline {
             }
         }
 
-        stage('Fix Permissions') {
-            // 这个 stage 现在是可选的，因为前面的 chown 已经处理了主要权限。
-            // 但保留它可以作为最后一步保障，确保 Jenkins 能完全控制所有产出物。
-            // 注意：这里的注释是在 Groovy 上下文中，所以用 //
+        stage('Final Permission Fix') {
+            // 这个 stage 确保最终 Jenkins 主机上的 jenkins 用户拥有对产出文件的完全控制权
             steps {
                 sh '''
                     echo "Final permission check to ensure Jenkins ownership..."
+                    # chown 回 Jenkins 运行时的用户 ID 和组 ID
                     chown -R $(id -u):$(id -g) .
                 '''
             }
         }
 
-        stage('Archive Executable') {
+        stage('Archive Artifacts') {
             steps {
                 archiveArtifacts artifacts: "${BUILD_OUTPUT_DIR}/**", followSymlinks: false
             }
