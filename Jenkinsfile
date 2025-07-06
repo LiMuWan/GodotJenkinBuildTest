@@ -1,24 +1,18 @@
-// Jenkinsfile (v51 - 修复下载缓存目录的权限问题)
+// Jenkinsfile (v52 - 授予对整个HOME目录的完全所有权)
 pipeline {
     agent any
 
     environment {
-        // --- 项目与构建配置 ---
+        // ... (所有环境变量保持不变) ...
         PROJECT_ROOT_IN_CONTAINER = "${env.WORKSPACE}" 
         EXPORT_PRESET = 'Windows Desktop'
         BUILD_OUTPUT_DIR = "${env.WORKSPACE}/Build/Windows"
         EXPORT_FILENAME = 'GodotJenkinBuildTest.exe'
-        
-        // --- 用户与权限配置 ---
         BUILD_USER_ID = '1000'
         BUILD_USER_NAME = 'builder'
         BUILD_GROUP_NAME = 'root' 
-        
-        // --- Godot 版本与模板配置 ---
         GODOT_RELEASE_TAG = '4.4.1-stable'
         TEMPLATE_FILENAME = "Godot_v${GODOT_RELEASE_TAG}_export_templates.tpz"
-        
-        // --- 缓存相关路径配置 ---
         HOST_CACHE_DIR_TEMPLATES = "/var/jenkins_home/cache/godot_templates/${GODOT_RELEASE_TAG}"
         HOST_CACHE_DIR_DOWNLOADS = "/var/jenkins_home/cache/godot_downloads"
         TEMPLATE_LOCAL_PATH = "${HOST_CACHE_DIR_DOWNLOADS}/${TEMPLATE_FILENAME}"
@@ -48,14 +42,14 @@ pipeline {
                             
                             echo "--> Ensuring cache directories exist and have correct permissions..."
                             mkdir -p "${HOST_CACHE_DIR_DOWNLOADS}"
-                            mkdir -p "/home/builder/.local/share/godot/export_templates"
+                            # 注意：我们不再需要在这里创建/home/builder/.local...，因为下一步chown会处理整个home
                             
                             # =====================================================================
-                            # ===                     最 终 权 限 修 复                     ===
-                            # === 将两个缓存目录的所有权都交给 builder 用户，确保可以写入 ===
+                            # ===          最终的、根本的、决定性的权限修复          ===
+                            # === 将整个 /home/builder 目录的所有权完全移交给 builder  ===
                             # =====================================================================
+                            chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} "/home/${BUILD_USER_NAME}"
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} "${HOST_CACHE_DIR_DOWNLOADS}"
-                            chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} "/home/${BUILD_USER_NAME}/.local"
                             # =====================================================================
                             
                             echo "Stage 2: Switching to user '${BUILD_USER_NAME}' to run build..."
@@ -63,6 +57,7 @@ pipeline {
                                 set -ex
                                 export HOME="/home/${BUILD_USER_NAME}"
                                 
+                                # ... (后续所有脚本逻辑保持不变) ...
                                 if [ ! -d "${TEMPLATE_TARGET_DIR_IN_CONTAINER}" ]; then
                                     echo "--> Export templates not found in cache. Starting installation..."
                                     
@@ -82,7 +77,6 @@ pipeline {
                                     echo "--> Monitoring installation progress (PID: \${GODOT_PID})..."
                                     TIMEOUT=600
                                     COUNT=0
-                                    # 使用更健壮的进程检查方式
                                     while kill -0 \${GODOT_PID} 2>/dev/null; do
                                         if [ \$COUNT -ge \$TIMEOUT ]; then
                                             echo "!!!--> ERROR: Template installation timed out after \${TIMEOUT} seconds."
@@ -96,7 +90,7 @@ pipeline {
                                     
                                     echo "--> SUCCESS: Template installation process finished."
                                     if [ ! -d "${TEMPLATE_TARGET_DIR_IN_CONTAINER}" ]; then
-                                       echo "!!!--> CRITICAL ERROR: Godot process finished but target directory was not created!"
+                                       echo "!!!--> CRITICAL ERROR: Godot process finished but target directory was not created! Check logs for errors."
                                        exit 1
                                     fi
                                 else
@@ -128,6 +122,7 @@ pipeline {
                 }
             }
         }
+        // ... (后续 stages 保持不变) ...
         stage('Archive Artifacts') {
             steps {
                 archiveArtifacts artifacts: "Build/Windows/**", followSymlinks: false, onlyIfSuccessful: true
