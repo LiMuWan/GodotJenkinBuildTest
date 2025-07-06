@@ -1,9 +1,10 @@
-// Jenkinsfile (v5 - 显示下载进度)
+// Jenkinsfile (v6 - 解决权限并采用标准安装模板流程)
 pipeline {
     agent {
         docker {
             image 'parsenoire/godot-headless:4.4'
-            args "-v ${env.WORKSPACE}:/project -w /project -e HOME=/project/.jenkins-home"
+            // [重要] 将 HOME 环境变量的定义移到 environment 区块，使其在 sh 脚本中也能被直接引用
+            args "-v ${env.WORKSPACE}:/project -w /project"
         }
     }
 
@@ -17,6 +18,9 @@ pipeline {
         TEMPLATE_FILENAME = "Godot_v${GODOT_RELEASE_TAG}_export_templates.tpz"
         TEMPLATE_URL = "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE_TAG}/${TEMPLATE_FILENAME}"
         TEMPLATE_LOCAL_PATH = "/tmp/${TEMPLATE_FILENAME}"
+
+        // [重要] 定义 HOME 环境变量，供 Godot 使用
+        HOME = '/project/.jenkins-home'
     }
 
     stages {
@@ -29,25 +33,35 @@ pipeline {
         stage('Build for Windows') {
             steps {
                 sh '''
+                    set -e // 如果任何命令失败，立即终止脚本
+
                     echo "========================================================"
-                    echo "Step 1: Checking for Godot export templates..."
+                    echo "Step 1: Downloading Godot export templates..."
                     
                     if [ ! -f "${TEMPLATE_LOCAL_PATH}" ]; then
                         echo "Template not found locally. Downloading from ${TEMPLATE_URL}..."
-                        
-                        # [核心修改] 去掉了 -q 参数，这样 wget 就会显示默认的下载进度条。
                         wget -O "${TEMPLATE_LOCAL_PATH}" "${TEMPLATE_URL}"
-                        
                         echo "Download complete."
                     else
-                        echo "Template already exists at ${TEMPLATE_LOCAL_PATH}. Skipping download."
+                        echo "Template already exists. Skipping download."
                     fi
 
+                    // [核心修改 1] 解决权限问题
                     echo "========================================================"
-                    echo "Step 2: Starting Godot export for preset '${EXPORT_PRESET}'"
+                    echo "Step 2: Preparing Godot user directory at ${HOME}"
+                    mkdir -p "${HOME}"
+                    echo "Directory created."
                     
-                    godot --headless --export-templates "${TEMPLATE_LOCAL_PATH}" --export-release "${EXPORT_PRESET}"
+                    // [核心修改 2] 采用标准的“先安装，再导出”流程
+                    echo "========================================================"
+                    echo "Step 3: Installing export templates..."
+                    godot --headless --install-export-templates "${TEMPLATE_LOCAL_PATH}"
+                    echo "Templates installed successfully."
 
+                    echo "========================================================"
+                    echo "Step 4: Starting Godot export for preset '${EXPORT_PRESET}'"
+                    // 现在不需要 --export-templates 参数了，Godot 会自动找到已安装的模板
+                    godot --headless --export-release "${EXPORT_PRESET}"
                     echo "Build completed successfully!"
                 '''
             }
@@ -57,6 +71,7 @@ pipeline {
             steps {
                 sh '''
                     echo "Changing ownership of build artifacts to match Jenkins user..."
+                    // 注意：现在也要包括新创建的 .jenkins-home 目录
                     chown -R $(id -u):$(id -g) .
                 '''
             }
@@ -69,3 +84,4 @@ pipeline {
         }
     }
 }
+
