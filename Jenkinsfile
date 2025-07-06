@@ -1,4 +1,4 @@
-// Jenkinsfile (v22 - 使用 --editor --quit 进行重量级预热)
+// Jenkinsfile (v23 - 引入 Xvfb 虚拟显示器)
 pipeline {
     agent any
 
@@ -46,6 +46,10 @@ pipeline {
                             echo "========================================================"
                             echo "Step 1: Preparing environment as root..."
                             
+                            echo "--> Installing Xvfb for virtual display server..."
+                            apt-get update -y && apt-get install -y xvfb
+                            
+                            echo "--> Creating build user..."
                             adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME}
                             mkdir -p ${CACHE_DIR}
                             mkdir -p ${GODOT_USER_PATH}
@@ -60,8 +64,8 @@ pipeline {
                                 export HOME=${PROJECT_ROOT_IN_CONTAINER} && \\
                                 echo '--> Now running as: \$(whoami) (ID: \$(id -u)) in PWD=\$(pwd)' && \\
                                 
-                                echo '--> [CRITICAL] Pre-warming Godot with --editor --quit to generate all settings...' && \\
-                                godot --editor --quit --display-driver headless --headless --user-path ${GODOT_USER_PATH} && \\
+                                echo '--> [CRITICAL] Pre-warming Godot inside Xvfb...' && \\
+                                xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' godot --editor --quit --user-path ${GODOT_USER_PATH} && \\
                                 echo '--> Pre-warming complete. All settings files should now exist.' && \\
                                 
                                 echo '--> Checking for cached Godot export templates...' && \\
@@ -73,11 +77,11 @@ pipeline {
                                     echo '--> Template found in cache. Skipping download.' ; \\
                                 fi && \\
                                 
-                                echo '--> Installing export templates (this MUST now skip theme generation)...' && \\
-                                godot --display-driver headless --verbose --headless --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} && \\
+                                echo '--> Installing export templates inside Xvfb (this will generate theme and exit)...' && \\
+                                xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' godot --verbose --install-export-templates ${TEMPLATE_LOCAL_PATH} --user-path ${GODOT_USER_PATH} && \\
                                 
-                                echo '--> Starting Godot export...' && \\
-                                godot --display-driver headless --verbose --headless --export-release \\"${EXPORT_PRESET}\\" --user-path ${GODOT_USER_PATH} && \\
+                                echo '--> Starting Godot export inside Xvfb...' && \\
+                                xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' godot --verbose --export-release \\"${EXPORT_PRESET}\\" --user-path ${GODOT_USER_PATH} && \\
                                 
                                 echo '--> Build completed successfully!' \\
                             "
