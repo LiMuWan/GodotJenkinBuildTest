@@ -1,12 +1,13 @@
-// Jenkinsfile (v36 - 回归初心)
+// Jenkinsfile (v37 - Docker in Docker 正确姿势)
 pipeline {
-    agent any // 让 Jenkins 在顶层处理 checkout
+    agent any
 
     environment {
-        // --- 构建配置 ---
-        PROJECT_ROOT_IN_CONTAINER = '/project'
+        // !!! 关键修改：容器内的项目路径就是 Jenkins 的工作区路径 !!!
+        PROJECT_ROOT_IN_CONTAINER = "${env.WORKSPACE}" 
+        
         EXPORT_PRESET = 'Windows Desktop'
-        BUILD_OUTPUT_DIR = 'Build/Windows'
+        BUILD_OUTPUT_DIR = "${env.WORKSPACE}/Build/Windows" // 使用绝对路径
         EXPORT_FILENAME = 'GodotJenkinBuildTest.exe'
 
         BUILD_USER_ID = '1000'
@@ -18,29 +19,27 @@ pipeline {
         TEMPLATE_FILENAME = "Godot_v${GODOT_RELEASE_TAG}_export_templates.tpz"
         
         // --- 路径变量 ---
-        CACHE_DIR = "${PROJECT_ROOT_IN_CONTAINER}/.cache" 
+        // 全部使用绝对路径，确保万无一失
+        CACHE_DIR = "${env.WORKSPACE}/.cache" 
         TEMPLATE_LOCAL_PATH = "${CACHE_DIR}/${TEMPLATE_FILENAME}"
         TEMPLATE_URL = "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE_TAG}/${TEMPLATE_FILENAME}"
-        GODOT_USER_PATH = "${PROJECT_ROOT_IN_CONTAINER}/.godot"
+        GODOT_USER_PATH = "${env.WORKSPACE}/.godot"
     }
 
     stages {
-        // !!! 删除 'Checkout Code' 阶段 !!!
-        // Jenkins 会在所有 stage 之前，自动在顶层 agent 上执行一次 checkout
-
         stage('Build in Docker Container') {
             steps {
                 script {
                     def godotImage = docker.image('parsenoire/godot-headless:4.4')
 
+                    // !!! 关键修改：移除 -v 参数，只保留 -u 和 -w !!!
+                    // Jenkins会自动处理 --volumes-from，将工作区挂载到容器内相同路径
                     godotImage.inside(
-                        // -u root 启动，-v 挂载 Jenkins 已检出的工作区
-                        "-u root -v ${env.WORKSPACE}:${PROJECT_ROOT_IN_CONTAINER} -w ${PROJECT_ROOT_IN_CONTAINER}"
+                        "-u root -w '${PROJECT_ROOT_IN_CONTAINER}'"
                     ) {
                         sh """
                             set -e
                             
-                            # 阶段一：以 root 用户准备环境
                             echo "Stage 1: Preparing environment as root..."
                             apt-get update -y && apt-get install -y --no-install-recommends \\
                                 xvfb xauth libxcursor1 libxkbcommon0 libxinerama1 \\
@@ -48,18 +47,19 @@ pipeline {
                             
                             adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME} || echo "User '${BUILD_USER_NAME}' already exists."
                             
-                            mkdir -p ${CACHE_DIR} ${GODOT_USER_PATH}
-                            chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} ${PROJECT_ROOT_IN_CONTAINER}
+                            mkdir -p '${CACHE_DIR}' '${GODOT_USER_PATH}'
+                            # 更改所有权时，要确保操作的是容器内的路径
+                            chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} '${PROJECT_ROOT_IN_CONTAINER}'
                             
-                            # 阶段二：切换到 builder 用户执行构建
                             echo "Stage 2: Switching to user '${BUILD_USER_NAME}' to run build..."
                             su -s /bin/sh ${BUILD_USER_NAME} -c '
                                 set -e
-                                cd ${PROJECT_ROOT_IN_CONTAINER}
+                                # 确保切换到正确的工作目录
+                                cd "${PROJECT_ROOT_IN_CONTAINER}"
                                 
-                                export HOME=${PROJECT_ROOT_IN_CONTAINER}
-
-                                # 再次进行决定性的调试检查
+                                echo "--> Now running as: \$(whoami) in \$(pwd)"
+                                
+                                # 再次检查文件是否存在，这次必须成功！
                                 echo "--- DEBUG: Listing project root contents (ls -la) ---"
                                 ls -la
 
@@ -72,7 +72,7 @@ pipeline {
                                     --path . \\
                                     --export-release "${EXPORT_PRESET}" \\
                                     "${BUILD_OUTPUT_DIR}/${EXPORT_FILENAME}" \\
-                                    --user-path ${GODOT_USER_PATH} \\
+                                    --user-path "${GODOT_USER_PATH}" \\
                                     --quit
                                 
                                 echo "--> Build completed successfully!"
@@ -85,7 +85,8 @@ pipeline {
 
         stage('Archive Artifacts') {
             steps {
-                archiveArtifacts artifacts: "${BUILD_OUTPUT_DIR}/**", followSymlinks: false
+                // 归档路径也需要是相对于 Jenkins 工作区的
+                archiveArtifacts artifacts: "Build/Windows/**", followSymlinks: false
             }
         }
     }
