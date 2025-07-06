@@ -1,4 +1,4 @@
-// Jenkinsfile (v32 - 单容器内正确执行用户切换)
+// Jenkinsfile (v33 - 安装 xauth 并再次确认目录)
 pipeline {
     agent any
 
@@ -37,11 +37,10 @@ pipeline {
                 script {
                     def godotImage = docker.image('parsenoire/godot-headless:4.4')
 
-                    // 我们只使用一个 inside 块，以 root 身份进入
                     godotImage.inside(
+                        // -w /project 确保容器启动后的默认目录是 /project
                         "-u root -v ${env.WORKSPACE}:${PROJECT_ROOT_IN_CONTAINER} -w ${PROJECT_ROOT_IN_CONTAINER}"
                     ) {
-                        // 所有命令都在这一个 sh 块里，保证在同一个容器中执行
                         sh """
                             set -e
                             
@@ -50,9 +49,10 @@ pipeline {
                             # ========================================================
                             echo "Stage 1: Preparing environment as root..."
                             
-                            echo "--> Installing dependencies..."
+                            echo "--> Installing dependencies (including xauth)..."
                             apt-get update -y && apt-get install -y --no-install-recommends \\
                                 xvfb \\
+                                xauth \\
                                 libxcursor1 \\
                                 libxkbcommon0 \\
                                 libxinerama1 \\
@@ -62,8 +62,7 @@ pipeline {
                                 wget
                             
                             echo "--> Creating build user '${BUILD_USER_NAME}'..."
-                            # 如果用户已存在则忽略错误
-                            adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME} || echo "User already exists"
+                            adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME} || echo "User '${BUILD_USER_NAME}' already exists, skipping creation."
                             
                             echo "--> Creating and setting permissions for required directories..."
                             mkdir -p ${CACHE_DIR}
@@ -75,16 +74,15 @@ pipeline {
                             # ========================================================
                             echo "Stage 2: Switching to user '${BUILD_USER_NAME}' to run build..."
                             
-                            # 使用 su 执行一个包含所有构建命令的子 shell
-                            # 注意：这里使用单引号 '...' 来包裹 su 的命令，
-                            # 这样可以防止变量被外部的 root shell 提前解析。
                             su -s /bin/sh ${BUILD_USER_NAME} -c '
                                 set -e
+                                
+                                # 强制切换到项目目录，确保万无一失
+                                cd ${PROJECT_ROOT_IN_CONTAINER}
                                 
                                 echo "--> Now running as: \$(whoami) (ID: \$(id -u))"
                                 echo "--> Current directory: \$(pwd)"
                                 
-                                # 在 builder 用户的 shell 中导出环境变量
                                 export HOME=${PROJECT_ROOT_IN_CONTAINER}
 
                                 echo "--> [CRITICAL] Pre-warming Godot inside Xvfb..."
