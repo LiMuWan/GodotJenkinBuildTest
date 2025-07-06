@@ -1,25 +1,17 @@
-// Jenkinsfile (v37 - Docker in Docker 正确姿势)
+// Jenkinsfile (v38 - 修正 HOME 环境变量)
 pipeline {
     agent any
 
     environment {
-        // !!! 关键修改：容器内的项目路径就是 Jenkins 的工作区路径 !!!
         PROJECT_ROOT_IN_CONTAINER = "${env.WORKSPACE}" 
-        
         EXPORT_PRESET = 'Windows Desktop'
-        BUILD_OUTPUT_DIR = "${env.WORKSPACE}/Build/Windows" // 使用绝对路径
+        BUILD_OUTPUT_DIR = "${env.WORKSPACE}/Build/Windows"
         EXPORT_FILENAME = 'GodotJenkinBuildTest.exe'
-
         BUILD_USER_ID = '1000'
         BUILD_USER_NAME = 'builder'
         BUILD_GROUP_NAME = 'root' 
-
-        // --- 模板配置 ---
         GODOT_RELEASE_TAG = '4.4.1-stable'
         TEMPLATE_FILENAME = "Godot_v${GODOT_RELEASE_TAG}_export_templates.tpz"
-        
-        // --- 路径变量 ---
-        // 全部使用绝对路径，确保万无一失
         CACHE_DIR = "${env.WORKSPACE}/.cache" 
         TEMPLATE_LOCAL_PATH = "${CACHE_DIR}/${TEMPLATE_FILENAME}"
         TEMPLATE_URL = "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE_TAG}/${TEMPLATE_FILENAME}"
@@ -31,9 +23,6 @@ pipeline {
             steps {
                 script {
                     def godotImage = docker.image('parsenoire/godot-headless:4.4')
-
-                    // !!! 关键修改：移除 -v 参数，只保留 -u 和 -w !!!
-                    // Jenkins会自动处理 --volumes-from，将工作区挂载到容器内相同路径
                     godotImage.inside(
                         "-u root -w '${PROJECT_ROOT_IN_CONTAINER}'"
                     ) {
@@ -48,31 +37,41 @@ pipeline {
                             adduser --uid ${BUILD_USER_ID} --shell /bin/sh --ingroup ${BUILD_GROUP_NAME} --disabled-password --no-create-home ${BUILD_USER_NAME} || echo "User '${BUILD_USER_NAME}' already exists."
                             
                             mkdir -p '${CACHE_DIR}' '${GODOT_USER_PATH}'
-                            # 更改所有权时，要确保操作的是容器内的路径
                             chown -R ${BUILD_USER_NAME}:${BUILD_GROUP_NAME} '${PROJECT_ROOT_IN_CONTAINER}'
                             
                             echo "Stage 2: Switching to user '${BUILD_USER_NAME}' to run build..."
+                            # !!! 终极修正：在 su 命令中直接设置 HOME 环境变量 !!!
                             su -s /bin/sh ${BUILD_USER_NAME} -c '
                                 set -e
-                                # 确保切换到正确的工作目录
+                                export HOME="${PROJECT_ROOT_IN_CONTAINER}" # 确保 HOME 指向工作区
                                 cd "${PROJECT_ROOT_IN_CONTAINER}"
                                 
-                                echo "--> Now running as: \$(whoami) in \$(pwd)"
+                                echo "--> Now running as: \$(whoami) in \$(pwd) with HOME=\${HOME}"
                                 
-                                # 再次检查文件是否存在，这次必须成功！
-                                echo "--- DEBUG: Listing project root contents (ls -la) ---"
-                                ls -la
+                                # 模板下载和安装步骤需要在这里执行，以确保在正确的用户和HOME环境下
+                                echo "--> Checking for cached Godot export templates..."
+                                if [ ! -f "${TEMPLATE_LOCAL_PATH}" ]; then
+                                    echo "--> Template not found. Downloading..."
+                                    wget -q --show-progress -O "${TEMPLATE_LOCAL_PATH}" "${TEMPLATE_URL}"
+                                    echo "--> Download complete."
+                                else
+                                    echo "--> Template found in cache."
+                                fi
+                                
+                                echo "--> Installing export templates..."
+                                # Godot 会自动使用 HOME/.local/share/godot/export_templates/
+                                xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" godot --headless --install-export-templates "${TEMPLATE_LOCAL_PATH}" --quit
 
                                 echo "--> Preparing output directory..."
                                 mkdir -p "${BUILD_OUTPUT_DIR}"
                                 
                                 echo "--> Starting Godot export..."
+                                # 移除 --user-path，让 Godot 使用默认路径（现在是正确的 HOME 路径）
                                 xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" godot \\
                                     --verbose \\
                                     --path . \\
                                     --export-release "${EXPORT_PRESET}" \\
                                     "${BUILD_OUTPUT_DIR}/${EXPORT_FILENAME}" \\
-                                    --user-path "${GODOT_USER_PATH}" \\
                                     --quit
                                 
                                 echo "--> Build completed successfully!"
@@ -85,9 +84,9 @@ pipeline {
 
         stage('Archive Artifacts') {
             steps {
-                // 归档路径也需要是相对于 Jenkins 工作区的
                 archiveArtifacts artifacts: "Build/Windows/**", followSymlinks: false
             }
         }
     }
 }
+
